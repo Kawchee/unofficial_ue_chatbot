@@ -71,9 +71,14 @@ header span { color: #06c167; }
     padding: 12px 16px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
     display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex-shrink: 0;
+}
+#input-row {
+    display: flex;
     gap: 10px;
     align-items: flex-end;
-    flex-shrink: 0;
 }
 #userInput {
     flex: 1;
@@ -83,12 +88,18 @@ header span { color: #06c167; }
     font-size: 15px;
     outline: none;
     resize: none;
-    max-height: 120px;
-    overflow-y: auto;
+    overflow: hidden;
     font-family: inherit;
     line-height: 1.4;
 }
 #userInput:focus { border-color: #000; }
+#privacy-note {
+    text-align: center;
+    font-size: 11px;
+    color: #aaa;
+    padding-top: 8px;
+}
+#privacy-note a { color: #aaa; text-decoration: underline; }
 #sendBtn {
     background: #000;
     color: #fff;
@@ -139,8 +150,11 @@ Hi! I'm an unofficial chatbot designed to help Uber Eats riders in the Netherlan
 </div>
 
 <div id="input-area">
-<textarea id="userInput" placeholder="Ask a question..." rows="1"></textarea>
-<button id="sendBtn">&#10148;</button>
+  <div id="input-row">
+    <textarea id="userInput" placeholder="Ask a question..." rows="1"></textarea>
+    <button id="sendBtn">&#10148;</button>
+  </div>
+  <div id="privacy-note">Conversations are recorded to improve the service. <a href="/privacy.html">Privacy policy</a></div>
 </div>
 
 <script>
@@ -152,7 +166,8 @@ const conversationHistory = [];
 
 userInput.addEventListener('input', function() {
     userInput.style.height = 'auto';
-    userInput.style.height = Math.min(userInput.scrollHeight, 120) + 'px';
+    const maxHeight = Math.min(window.innerHeight * 0.3, 160);
+    userInput.style.height = Math.min(userInput.scrollHeight, maxHeight) + 'px';
 });
 
 userInput.addEventListener('keydown', function(e) {
@@ -192,7 +207,8 @@ async function sendMessage() {
     chatEl.appendChild(userDiv);
 
     userInput.value = '';
-    userInput.style.height = 'auto';
+    userInput.style.height = '';
+
     sendBtn.disabled = true;
     scrollToBottom();
 

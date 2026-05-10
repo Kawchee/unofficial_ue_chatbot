@@ -157,7 +157,7 @@ def ingest_all(folder_path, language_map=None, file_filter=None):
     if not files:
         print("Nessun file supportato trovato in " + folder_path)
         return []
-    print("Trovati " + str(len(files)) + " file da ingestare.\n")
+    print("Trovati " + str(len(files)) + " file da ingestire.\n")
     if language_map is None:
         language_map = {}
     results = []

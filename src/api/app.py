@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openai import OpenAI
+from supabase import create_client
 from dotenv import load_dotenv
 from src.api.prompt import SYSTEM_PROMPT
 from src.api.pipeline import (
@@ -47,6 +48,12 @@ app.add_middleware(
 openrouter_client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
     base_url="https://openrouter.ai/api/v1"
+)
+
+# Client Supabase — usato per il logging delle query.
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
 )
 
 
@@ -94,6 +101,40 @@ def validate_messages(messages: list[Message]) -> list[dict]:
         msgs = msgs[-max_messages:]
 
     return msgs
+
+
+def log_query(
+    query_original: str,
+    query_english: str,
+    query_rewritten: str,
+    detected_language: str,
+    chunks: list,
+    response: str,
+):
+    """
+    Salva una riga in query_logs su Supabase.
+    Chiamata dopo l'invio del done SSE — non blocca il client.
+    Gli errori vengono loggati ma non propagati: il logging non deve
+    mai far fallire una risposta già completata.
+    """
+    try:
+        supabase.table("query_logs").insert({
+            "query_original": query_original,
+            "query_english": query_english,
+            "query_rewritten": query_rewritten,
+            "detected_language": detected_language,
+            "chunks_retrieved": [
+                {
+                    "file": c["metadata"].get("file_name"),
+                    "section": c["metadata"].get("section_title"),
+                    "score": c.get("rerank_score"),
+                }
+                for c in chunks
+            ],
+            "response": response,
+        }).execute()
+    except Exception as e:
+        logger.warning("query_logs insert failed: %s", e)
 
 
 @app.post("/chat")
@@ -151,6 +192,8 @@ async def chat(request: ChatRequest):
         # Invia le fonti prima di iniziare lo stream del testo
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
+        full_response = []
+
         stream = openrouter_client.chat.completions.create(
             model=MODEL,
             messages=[
@@ -165,9 +208,20 @@ async def chat(request: ChatRequest):
         for chunk in stream:
             delta = chunk.choices[0].delta
             if delta.content:
+                full_response.append(delta.content)
                 yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        # Log dopo il done — il client ha già ricevuto la risposta completa
+        log_query(
+            query_original=last_query,
+            query_english=english_query,
+            query_rewritten=retrieval_query,
+            detected_language=detected_lang,
+            chunks=chunks,
+            response="".join(full_response),
+        )
 
     return StreamingResponse(
         generate(),
@@ -184,6 +238,6 @@ async def health():
 # Serve il frontend in modalità sviluppo locale.
 # Avviando uvicorn dalla root del progetto, questa riga rende il frontend
 # raggiungibile direttamente su http://localhost:8000 senza un server separato.
-# In un deployment di produzione il frontend verrebbe servito in modo indipendente
-# (es. Nginx, CDN) e questa riga non sarebbe necessaria.
+# Su Fly.io il frontend è servito dallo stesso processo FastAPI tramite questa
+# stessa riga: non rimuoverla.
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
